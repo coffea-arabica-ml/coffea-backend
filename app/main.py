@@ -32,9 +32,21 @@ def raiz():
 
 @app.post("/diagnostico")
 async def diagnosticar(imagem: UploadFile = File(...), db: Session = Depends(get_db)):
-    # TODO (Frente 9): substituir isso pela inferência real do modelo treinado no coffea-ml.
-    categoria = "Ferrugem"
-    severidade = "Baixa"
+    # Simulação da inferência enquanto aguarda o modelo treinado (Frente 9).
+    # Identifica patologias pelo nome do arquivo para testes visuais ou mantém padrão Ferrugem/Baixa.
+    nome_arquivo = (imagem.filename or "").lower()
+    if "mineiro" in nome_arquivo:
+        categoria = "Bicho-Mineiro"
+        severidade = "Alta"
+    elif "cercospora" in nome_arquivo or "cercosporiose" in nome_arquivo:
+        categoria = "Cercosporiose"
+        severidade = "Média"
+    elif "saudavel" in nome_arquivo:
+        categoria = "Saudável"
+        severidade = "Nenhuma"
+    else:
+        categoria = "Ferrugem"
+        severidade = "Baixa"
 
     # Frente 7 / RF05: toda chamada bem-sucedida grava um registro no histórico.
     registro = Diagnostico(categoria=categoria, severidade=severidade)
@@ -50,4 +62,10 @@ async def diagnosticar(imagem: UploadFile = File(...), db: Session = Depends(get
 @app.get("/historico", response_model=List[DiagnosticoOut])
 def historico(db: Session = Depends(get_db)):
     """Consulta o histórico de diagnósticos, mais recentes primeiro (RF05)."""
-    return db.query(Diagnostico).order_by(Diagnostico.criado_em.desc()).all()
+    return (
+        db.query(Diagnostico)
+        # id.desc() desempata diagnósticos feitos no mesmo segundo
+        # (criado_em tem resolução de segundo no SQLite).
+        .order_by(Diagnostico.criado_em.desc(), Diagnostico.id.desc())
+        .all()
+    )

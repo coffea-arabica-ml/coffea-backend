@@ -13,11 +13,16 @@ Sem migração versionada (Alembic) neste estágio: o schema ainda é pequeno
 o suficiente para recriar o banco durante o desenvolvimento.
 """
 
+from pathlib import Path
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# Arquivo único na raiz do repositório, ao lado de app/.
-SQLALCHEMY_DATABASE_URL = "sqlite:///./coffea.db"
+# Localiza o arquivo coffea.db de forma absoluta na raiz do repositório,
+# garantindo que funcione mesmo se o comando for executado de outro diretório.
+DIRETORIO_RAIZ = Path(__file__).resolve().parent.parent.parent
+DB_PATH = DIRETORIO_RAIZ / "coffea.db"
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
 
 # check_same_thread=False é necessário só para SQLite: o FastAPI pode
 # atender requisições em threads diferentes da que criou a conexão.
