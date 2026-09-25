@@ -23,7 +23,16 @@ pela rede Wi-Fi local.
 ## Rotas
 - `GET /` — healthcheck
 - `POST /diagnostico` — recebe imagem, devolve categoria e severidade
-  (resposta simulada até a Frente 9 integrar o modelo real)
+  (resposta simulada até a Frente 9 integrar o modelo real) e grava o
+  resultado no histórico
+- `GET /historico` — lista os diagnósticos já realizados, mais recentes
+  primeiro (RF05)
+
+## Banco de dados
+SQLite (`coffea.db`, criado automaticamente na raiz do repositório na
+primeira execução), acessado via SQLAlchemy. Modelos e conexão ficam em
+`app/db/`. Sem migração versionada (Alembic) neste estágio — ver
+justificativa no documento-mestre da Frente 7.
 
 ## Contribuindo
 Uma branch por tarefa, commits no imperativo, PR obrigatório antes de
