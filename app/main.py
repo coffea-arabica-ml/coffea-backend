@@ -1,27 +1,50 @@
-from fastapi import FastAPI, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from sqlalchemy.orm import Session
 
-app = FastAPI(title="Coffea Backend")
+from app.db import crud, models  # models importado para o create_all enxergar as tabelas
+from app.db.database import Base, engine, get_db
+from app.db.schemas import Categoria, DiagnosticoOut, ProblemaIn, Severidade
 
-# Libera o acesso do frontend web (Vite) e do app mobile (Expo) durante o desenvolvimento.
-# TODO (Frente 10): restringir isso a domínios específicos quando formos pra produção.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Cria coffea.db e as tabelas, se ainda não existirem.
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI()
 
 
-@app.get("/")
-def raiz():
-    return {"status": "ok", "mensagem": "coffea-backend no ar"}
+def executar_modelo(imagem: UploadFile) -> list[ProblemaIn]:
+    """
+    Substituir pela inferência real (Frente 9). Deve devolver TODOS os
+    problemas encontrados na folha; lista vazia = saudável.
+    """
+    return [
+        ProblemaIn(categoria=Categoria.FERRUGEM, severidade=Severidade.BAIXA),
+        ProblemaIn(categoria=Categoria.BICHO_MINEIRO, severidade=Severidade.ALTA),
+    ]
 
 
-@app.post("/diagnostico")
-async def diagnosticar(imagem: UploadFile = File(...)):
-    # TODO (Frente 9): substituir isso pela inferência real do modelo treinado no coffea-ml.
-    return {
-        "categoria": "Ferrugem",
-        "severidade": "Baixa",
-    }
+@app.post("/diagnostico", response_model=DiagnosticoOut)
+def diagnostico(imagem: UploadFile = File(...), db: Session = Depends(get_db)):
+    # Se o modelo lançar exceção, nada é gravado e o FastAPI devolve erro.
+    problemas = executar_modelo(imagem)
+
+    # Só chega aqui em caso de sucesso: grava e responde com o registro salvo.
+    return crud.criar_diagnostico(
+        db,
+        problemas=[(p.categoria.value, p.severidade.value) for p in problemas],
+    )
+
+
+@app.get("/diagnosticos", response_model=list[DiagnosticoOut])
+def historico(
+    limit: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    return crud.listar_diagnosticos(db, limit=limit)
+
+
+@app.get("/diagnosticos/{diagnostico_id}", response_model=DiagnosticoOut)
+def detalhe(diagnostico_id: int, db: Session = Depends(get_db)):
+    registro = crud.obter_diagnostico(db, diagnostico_id)
+    if registro is None:
+        raise HTTPException(status_code=404, detail="Diagnóstico não encontrado.")
+    return registro
