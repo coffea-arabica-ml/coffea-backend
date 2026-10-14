@@ -61,6 +61,9 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# Banco SQLite local do coffea-backend (Frente 7) — não versionado.
+*.db
+
 # Flask stuff:
 instance/
 .webassets-cache
