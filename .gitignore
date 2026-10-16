@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# coffea-backend: banco do histórico e pesos do modelo nunca entram no git
+# (.env e venv/ já estão acima)
+coffea.db
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.pt
+*.pth
