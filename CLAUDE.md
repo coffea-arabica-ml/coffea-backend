@@ -9,7 +9,8 @@ SQLite (`coffea.db`). Detalhes no README.
 - Commits no imperativo, em português. Claude nunca faz commit, push, pull, merge, checkout de
   outras branches, reset --hard, force nem reescrita de histórico: o gestor commita pelo GitHub
   Desktop.
-- Neste ciclo de integração, o gestor trabalha direto na `main` (decisão de 15/10/2026).
+- Trabalhamos direto na `main`, sem branch nem PR (decisão do gestor, 15/10/2026; vale para todos
+  os repositórios desde 16/10/2026).
 - Nunca usar os conjuntos de teste fechados do coffea-ml (BRACOL de teste, `test/` do BRACOT,
   recortes de campo de teste), nem em testes, nem em medições.
 - O modelo está congelado: não mudar parâmetros nem limiares, e não mexer no coffea-ml, no

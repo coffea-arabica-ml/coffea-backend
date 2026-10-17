@@ -33,30 +33,40 @@ fastapi dev app/main.py --host 0.0.0.0
 
 A instalação tem dois passos. O ultralytics entra sem dependências (ver "Dependências").
 
+Se o `Activate.ps1` for bloqueado pela política de execução do PowerShell, rode você mesmo
+`Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned` (vale só para a janela aberta) e
+ative de novo.
+
 Documentação interativa das rotas em http://127.0.0.1:8000/docs. O roteiro de teste pelo
 Swagger está em [GUIA_TESTE.md](GUIA_TESTE.md).
 
 O `--host 0.0.0.0` é necessário para o coffea-mobile alcançar o servidor
-pela rede Wi-Fi local.
+pela rede local.
 
 - **Subida:** o servidor confere os pesos e carrega o modelo antes de aceitar requisições
-  (6,9 s nesta máquina). O `GET /` mostra se o modelo carregou e, se não, o motivo.
+  (cerca de 9 s do comando até `carregado=true`, medido em 16/10/2026, incluindo a ativação do
+  venv e a inicialização). O `GET /` mostra se o modelo carregou e, se não, o motivo.
 - **Reload:** o `fastapi dev` reinicia o servidor a cada `.py` salvo, e cada reinício carrega o
   modelo de novo. Para mexer só no front, use `COFFEA_CARREGAR_MODELO=0` (o servidor sobe na
   hora e o `POST /diagnostico` responde 503). Para uma apresentação, sem reload:
   `fastapi run app/main.py --host 0.0.0.0`.
 - **Frontends em modo real:** no coffea-web, `VITE_API_MODE=http` e
   `VITE_API_URL=http://localhost:8000`. No coffea-mobile, `EXPO_PUBLIC_API_MODE=http` e
-  `EXPO_PUBLIC_API_URL=http://<IP do PC>:8000`. O IP do PC é o "Endereço IPv4" do Wi-Fi no
-  `ipconfig`.
+  `EXPO_PUBLIC_API_URL=http://<IP do PC>:8000`. O IP do PC é o "Endereço IPv4" do adaptador
+  da rede local (Wi-Fi ou cabo) no `ipconfig`, não o de VirtualBox, WSL ou VPN.
 
 ### Celular na mesma rede: firewall do Windows
 Orientação para quem vai apresentar. Os comandos mudam a configuração do Windows: rode-os você
 mesmo, no PowerShell **como administrador**.
 
-1. Confira que o Wi-Fi está como rede **Privada**. Em `Get-NetConnectionProfile`, o
+**Talvez já baste.** Se o Windows mostrou a janela do firewall na primeira subida com
+`--host 0.0.0.0` e você permitiu o Python, a regra criada ali pode já bastar. Teste
+`http://<IP do PC>:8000/` no navegador do celular antes de criar a regra abaixo.
+
+1. Confira que a rede (Wi-Fi ou cabo) está como **Privada**. Em `Get-NetConnectionProfile`, o
    `NetworkCategory` tem de ser `Private`. Pela tela: Configurações > Rede e Internet > Wi-Fi >
-   (a rede) > Tipo de perfil de rede. Só marque como Privada uma rede em que você confia.
+   (a rede), ou Ethernet > Tipo de perfil de rede. Só marque como Privada uma rede em que você
+   confia.
 2. Libere a porta 8000 só no perfil Privado:
    ```powershell
    New-NetFirewallRule -DisplayName "coffea-backend 8000" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow -Profile Private
@@ -154,7 +164,7 @@ detalhes internos. Os erros do modelo podem trazer também `detalhes`.
 |---|---|---|
 | 200 | `planta_nao_identificada` | o modelo não achou folha de café utilizável |
 | 200 | `baixa_confianca` | todas as folhas ficaram abaixo do corte (RF07), ou só há pedaços de folha |
-| 200 | `formato_invalido` | o arquivo começa como JPG ou PNG, mas não decodifica |
+| 200 | `formato_invalido` | o arquivo começa como JPG ou PNG, mas não decodifica (um JPEG corrompido com cabeçalho válido devolve 500: ver "Limitações conhecidas") |
 | 200 | `arquivo_muito_grande` | mais de 64 megapixels, lidos do cabeçalho |
 | — | `especie_incorreta` | não é produzido hoje: não há dados de outras plantas para treinar essa recusa |
 | 413 | `arquivo_muito_grande` | arquivo acima de 10 MB (10 × 1024 × 1024 bytes) |
@@ -260,12 +270,15 @@ Medição de 16/10/2026: as 30 primeiras fotos, em ordem alfabética, do BRACOT 
 Todas as 30 chamadas deram HTTP 200, e nenhuma passou de 5 s. Como referência, só o modelo, no
 coffea-ml, teve mediana de 0,80 s e pior caso estimado de 2,15 s.
 
+A subida da tabela vai do início do processo `python -m uvicorn app.main:app`, que o script abre,
+até o `GET /` mostrar `carregado=true`. Do comando `fastapi run`, com a ativação do venv, são
+cerca de 9 s.
+
 ## Dependências
 - **Lista à mão:** o `requirements.txt` é uma lista fixa, mantida à mão, e **não** sai de `pip
-  freeze`. É uma exceção à regra da seção "Contribuindo". O ultralytics precisa de `pip install
-  --no-deps`, e um freeze o listaria como dependência normal. Uma instalação a partir dessa lista
-  traria então o `opencv-python` por cima do `opencv-python-headless` (os dois gravam o mesmo
-  módulo `cv2`).
+  freeze`. O ultralytics precisa de `pip install --no-deps`, e um freeze o listaria como
+  dependência normal. Uma instalação a partir dessa lista traria então o `opencv-python` por
+  cima do `opencv-python-headless` (os dois gravam o mesmo módulo `cv2`).
 - **Dependência nova:** acrescente a linha à mão, com a versão. As da inferência seguem o
   `coffea-ml/requirements.txt`. As dependências que o ultralytics pede e o resto não traz
   (`polars`, `polars-runtime-32`, `nvidia-ml-py`, `ultralytics-thop`, `ultralytics-platform`) já
@@ -275,6 +288,19 @@ coffea-ml, teve mediana de 0,80 s e pior caso estimado de 2,15 s.
   pela cadeia de inferência (conferido num venv limpo em 16/10/2026).
 - **Linux:** o torch do PyPI vem com CUDA, um download grande. O ambiente de produção fica para a
   Frente 10.
+
+## Limitações conhecidas
+- **Objeto que não é planta pode voltar como sucesso.** A `teste-sem-planta.jpg` (fixture do
+  coffea-web) voltou com 3 folhas saudáveis, com `scoreDeteccao` de 0,80 a 0,87. Nas 35 folhas
+  reais medidas (as 6 primeiras fotos, em ordem alfabética, do BRACOT de treino, em 16/10/2026),
+  o mínimo foi 0,59 e a mediana, 0,90. Nesta amostra (1 imagem sem planta e 35 folhas reais,
+  fotos originais), nenhum limiar de detecção separa os dois sem perder folhas reais. O modelo
+  está congelado, e nenhum limiar foi alterado.
+- **JPEG corrompido com cabeçalho válido** devolve 500, e não 200 com `formato_invalido`.
+- **Pedido cancelado pelo cliente** continua processando e entra no histórico.
+- **Contagem de folhas saudáveis:** pode variar ±1 conforme a redução da foto. Uma folha saudável
+  colada no corte do modelo aparece ou some (visto em 2 de 6 fotos, comparando a original com a
+  reduzida a 2048 px).
 
 ## Pendências da Frente 10
 - **Pesos em produção:** hoje eles vêm do clone local do coffea-ml.
@@ -286,6 +312,6 @@ coffea-ml, teve mediana de 0,80 s e pior caso estimado de 2,15 s.
   até 10 MB + 1 byte. O limite na recepção (proxy ou servidor) fica para o deploy.
 
 ## Contribuindo
-Uma branch por tarefa, commits no imperativo, PR obrigatório antes de
-merge na `main`. Sempre rode `pip freeze > requirements.txt` antes de
-commitar uma dependência nova.
+Trabalhamos direto na `main`, sem branch nem PR (decisão do gestor, 15/10/2026; vale para
+todos os repositórios desde 16/10/2026). Commits no imperativo. Dependência nova: acrescente a
+linha à mão em `requirements.txt` (ver "Dependências").
