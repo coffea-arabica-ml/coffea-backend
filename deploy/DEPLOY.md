@@ -354,7 +354,7 @@ cd /opt/cafelens/coffea-backend/deploy
 docker compose stop api
 docker compose run --rm --no-deps -v /opt/cafelens/fotos-treino:/fotos:ro api \
   python scripts/medir_tempo.py --pasta /fotos --amostra 30
-docker compose start api
+docker compose up -d --no-build --wait
 ```
 
 O contêiner avulso aparece como `unhealthy` enquanto mede (o healthcheck olha a porta 8000, e o
