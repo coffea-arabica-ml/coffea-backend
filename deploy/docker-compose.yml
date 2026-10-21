@@ -1,0 +1,96 @@
+# Cafélens em produção: a API (coffea-backend + coffea-ml, em CPU) atrás do Caddy, com HTTPS automático.
+# Rode os comandos na pasta deploy/: o compose lê o deploy/.env daqui (modelo em deploy/.env.example).
+# Roteiro completo em deploy/DEPLOY.md.
+#
+# Só o Caddy publica portas (80 e 443). O Docker passa por cima do ufw nas portas publicadas, então a
+# API fica sem "ports", só na rede interna, que também não tem saída para a internet.
+name: cafelens
+
+x-logs: &logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  api:
+    build:
+      context: ../..  # a pasta com coffea-backend/ e coffea-ml/ lado a lado (/opt/cafelens)
+      dockerfile: coffea-backend/deploy/Dockerfile  # e o Dockerfile.dockerignore ao lado dele
+      args:
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+        COMMIT_BACKEND: ${COMMIT_BACKEND:?defina COMMIT_BACKEND no deploy/.env}
+        COMMIT_ML: ${COMMIT_ML:?defina COMMIT_ML no deploy/.env}
+    # Uma imagem por par de commits: o rollback é voltar os commits no .env (DEPLOY.md).
+    image: cafelens-api:${COMMIT_BACKEND:?defina COMMIT_BACKEND no deploy/.env}-${COMMIT_ML:?defina COMMIT_ML no deploy/.env}
+    restart: unless-stopped
+    init: true
+    environment:
+      COFFEA_ML_DIR: /app/coffea-ml
+      COFFEA_VERIFICAR_PESOS: "1"
+      COFFEA_CONCORRENCIA: "1"  # 1 vCPU, e o YOLO do ultralytics não é thread-safe
+      COFFEA_CARREGAR_MODELO: "1"
+      COFFEA_DB: /dados/coffea.db
+      COFFEA_CORS_ORIGENS: ${COFFEA_CORS_ORIGENS:?defina COFFEA_CORS_ORIGENS no deploy/.env}
+      # O settings.json do ultralytics vai para o /tmp, porque o código é só-leitura. Não muda a inferência.
+      YOLO_CONFIG_DIR: /tmp
+      # Menos fragmentação do malloc com as threads do servidor: memória estável nas 24 h.
+      MALLOC_ARENA_MAX: "2"
+    volumes:
+      # Os pesos, só-leitura, nos caminhos padrão do coffea-ml, que são os do MANIFESTO.md: a conferência
+      # de tamanho e SHA-256 vale como no PC. Arquivo ausente dá erro no "up" (não vira pasta vazia).
+      - type: bind
+        source: ../../coffea-ml/model/runs/base_resnet50_bracol/melhor.pt
+        target: /app/coffea-ml/model/runs/base_resnet50_bracol/melhor.pt
+        read_only: true
+      - type: bind
+        source: ../../coffea-ml/model/runs/detector_base/weights/last.pt
+        target: /app/coffea-ml/model/runs/detector_base/weights/last.pt
+        read_only: true
+      # O coffea.db e os backups, fora dos repositórios.
+      - type: bind
+        source: ${DADOS_DIR:-../../dados}
+        target: /dados
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m  # uploads esperando na fila (o multipart passa de 1 MB para arquivo) e o ultralytics
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # 4 GB de RAM e 2 GB de swap no VPS: ~0,4 GB para o SO, até 256 MiB para o Caddy e 2,5 GiB para a
+    # API (o dobro do pico de working set medido no Windows, 1,18 GB). Até 1 GiB de swap antes do OOM;
+    # no OOM, o kernel mata só a API, e o restart a sobe de novo.
+    mem_limit: 2560m
+    memswap_limit: 3584m
+    # O vCPU inteiro: uma cota menor deixaria cada diagnóstico mais lento na mesma proporção.
+    cpus: 1.0
+    stop_grace_period: 30s  # termina a inferência em andamento
+    networks: [interna]
+    logging: *logs
+
+  caddy:
+    image: caddy:2.11.7-alpine
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMINIO: ${DOMINIO:?defina DOMINIO no deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data  # certificados e conta do Let's Encrypt: nunca "docker compose down -v"
+      - caddy_config:/config
+    mem_limit: 256m
+    cpus: 0.5
+    networks: [borda, interna]
+    logging: *logs
+
+networks:
+  borda: {}
+  interna:
+    internal: true  # sem saída para a internet: a API não precisa (o modelo roda offline)
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}

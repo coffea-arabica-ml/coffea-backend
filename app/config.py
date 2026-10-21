@@ -6,6 +6,7 @@ sem sobrescrever o que já estiver no ambiente. Caminhos relativos valem a parti
 repositório, não do diretório de execução, e saem sempre absolutos.
 """
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,8 @@ from dotenv import load_dotenv
 
 RAIZ_REPO = Path(__file__).resolve().parents[1]
 LIMITE_BYTES = 10 * 1024 * 1024  # tamanho máximo do upload (10 MB), o mesmo dos frontends
+ORIGENS_CORS_PADRAO = ("http://localhost:5173", "http://127.0.0.1:5173")  # o Vite do coffea-web
+_ORIGEM = re.compile(r"https?://[a-z0-9.-]+(:\d{1,5})?")  # como o navegador manda no cabeçalho Origin
 _VERDADEIRO = {"1", "true", "sim", "yes"}
 _FALSO = {"0", "false", "nao", "não", "no"}
 
@@ -27,6 +30,7 @@ class Config:
     concorrencia: int = 1  # inferências ao mesmo tempo
     carregar_modelo: bool = True  # False: sobe sem modelo, e o POST /diagnostico responde 503
     caminho_db: Path | None = RAIZ_REPO / "coffea.db"  # None: banco em memória (testes)
+    cors_origens: tuple[str, ...] = ORIGENS_CORS_PADRAO  # origens do navegador liberadas no CORS
 
 
 def carregar_config(ambiente: Mapping[str, str] | None = None) -> Config:
@@ -47,6 +51,7 @@ def carregar_config(ambiente: Mapping[str, str] | None = None) -> Config:
         concorrencia=_inteiro_positivo("COFFEA_CONCORRENCIA", valor("COFFEA_CONCORRENCIA"), 1),
         carregar_modelo=_booleano("COFFEA_CARREGAR_MODELO", valor("COFFEA_CARREGAR_MODELO"), True),
         caminho_db=caminho_absoluto(valor("COFFEA_DB") or "coffea.db"),
+        cors_origens=_origens("COFFEA_CORS_ORIGENS", valor("COFFEA_CORS_ORIGENS")),
     )
 
 
@@ -68,6 +73,18 @@ def _booleano(nome: str, valor: str | None, padrao: bool) -> bool:
     if valor.lower() in _FALSO:
         return False
     raise ValueError(f"{nome} deve ser 0 ou 1 (veio {valor!r})")
+
+
+def _origens(nome: str, valor: str | None) -> tuple[str, ...]:
+    """As origens separadas por vírgula, no formato do cabeçalho Origin: esquema://host[:porta], sem
+    barra no fim. O CORS compara o texto exato, então barra, caminho ou "*" impedem a subida."""
+    if valor is None:
+        return ORIGENS_CORS_PADRAO
+    origens = tuple(o.strip().lower() for o in valor.split(",") if o.strip())
+    if not origens or not all(_ORIGEM.fullmatch(o) for o in origens):
+        raise ValueError(f"{nome} deve listar origens como https://site.vercel.app, separadas por "
+                         f"vírgula e sem barra no fim (veio {valor!r})")
+    return origens
 
 
 def _inteiro_positivo(nome: str, valor: str | None, padrao: int) -> int:

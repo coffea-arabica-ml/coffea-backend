@@ -1,0 +1,17 @@
+# Ignore do deploy/Dockerfile (o BuildKit lê o <Dockerfile>.dockerignore ao lado dele). O contexto do
+# build é a pasta com os clones lado a lado (/opt/cafelens), que não é repositório, então esta é a
+# lista do que ENTRA; o resto fica de fora: data/raw/ e data/processed/ do coffea-ml, model/runs/ (com
+# os pesos), .git, venv/, .env, a pasta dados/ (coffea.db e backups) e as fotos.
+*
+!coffea-backend/requirements.txt
+!coffea-backend/app/
+!coffea-backend/scripts/
+!coffea-ml/model/*.py
+!coffea-ml/model/pesos/MANIFESTO.md
+!coffea-ml/data/*.py
+# Só para o scripts/medir_tempo.py recusar fotos de teste fechado pelo SHA-256.
+!coffea-ml/data/manifests/bracol.csv
+!coffea-ml/data/manifests/bracot.csv
+!coffea-ml/evaluation/*.py
+**/__pycache__
+**/*.pyc

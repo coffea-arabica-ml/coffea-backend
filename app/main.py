@@ -32,6 +32,18 @@ _ERROS_DO_UPLOAD = {
 }
 _ERRO_404 = {404: {"model": Erro, "description": "Diagnóstico não encontrado (erro_desconhecido)."}}
 
+# O /docs (OpenAPI) oferece o código-fonte: o detector do coffea-ml usa o ultralytics, AGPL-3.0, e
+# quem usa o serviço pela rede tem de achar o código (README, "Licença e código-fonte").
+_ORGANIZACAO = "https://github.com/coffea-arabica-ml"
+DESCRICAO = (
+    "Diagnóstico de folhas de *Coffea arabica* (Cafélens). Contrato no README do coffea-backend.\n\n"
+    "**Código-fonte e licença.** O serviço é distribuído sob a AGPL-3.0, porque o detector usa o "
+    f"ultralytics. Código do serviço: [coffea-backend]({_ORGANIZACAO}/coffea-backend) e "
+    f"[coffea-ml]({_ORGANIZACAO}/coffea-ml). Clientes: [coffea-web]({_ORGANIZACAO}/coffea-web) e "
+    f"[coffea-mobile]({_ORGANIZACAO}/coffea-mobile)."
+)
+LICENCA = {"name": "AGPL-3.0", "url": "https://www.gnu.org/licenses/agpl-3.0.html"}
+
 rotas = APIRouter()
 
 
@@ -39,7 +51,7 @@ rotas = APIRouter()
 async def lifespan(app: FastAPI):
     """Na subida, o banco e o modelo. Tabelas incompatíveis no banco impedem a subida; falha no
     modelo não (o POST responde 503). Os dois bloqueiam (SQLite, SHA-256, torch): rodam em threads."""
-    config = app.state.config or carregar_config()
+    config = app.state.config
     engine = database.criar_engine(config.caminho_db)
     try:
         await run_in_threadpool(database.iniciar_banco, engine)
@@ -137,16 +149,19 @@ def configurar_log() -> None:
 
 
 def criar_app(config: Config | None = None) -> FastAPI:
-    """O app. Sem config, a configuração vem do ambiente (e do .env) na subida."""
+    """O app. Sem config, a configuração vem do ambiente (e do .env), lida aqui e não na subida: o
+    CORS precisa das origens antes. Valor inválido impede a criação, com o nome da variável."""
     configurar_log()
-    app = FastAPI(title="Coffea Backend", lifespan=lifespan)
+    config = config or carregar_config()
+    app = FastAPI(title="Coffea Backend", description=DESCRICAO, license_info=LICENCA,
+                  lifespan=lifespan)
     app.state.config = config
 
-    # Libera o acesso do frontend web (Vite) e do app mobile (Expo) durante o desenvolvimento.
-    # TODO (Frente 10): restringir isso a domínios específicos quando formos pra produção.
+    # Frente 10 (feito): só as origens do navegador em COFFEA_CORS_ORIGENS (padrão: o Vite local do
+    # coffea-web). O app mobile nativo não manda Origin e não depende do CORS.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=list(config.cors_origens),
         allow_methods=["*"],
         allow_headers=["*"],
     )

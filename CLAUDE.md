@@ -31,7 +31,8 @@ python scripts/medir_tempo.py --pasta ../coffea-ml/data/raw/bracot/bracot-data/t
 
 ## Variáveis (README, "Variáveis de ambiente"; modelo em .env.example)
 `COFFEA_ML_DIR`, `COFFEA_PASTA_CLASSIFICADOR`, `COFFEA_PESOS_DETECTOR`, `COFFEA_VERIFICAR_PESOS`,
-`COFFEA_CONCORRENCIA`, `COFFEA_CARREGAR_MODELO`, `COFFEA_DB`.
+`COFFEA_CONCORRENCIA`, `COFFEA_CARREGAR_MODELO`, `COFFEA_DB`, `COFFEA_CORS_ORIGENS`. Produção (Docker +
+Caddy no VPS): `deploy/DEPLOY.md`.
 
 ## Contrato
 Sucesso: `{"status": "sucesso", "folhas": [{"id", "categoria", "severidade", "regiao"}, ...]}`,

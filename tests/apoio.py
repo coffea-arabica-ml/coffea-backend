@@ -11,7 +11,8 @@ from PIL import Image
 from app.config import Config
 from app.db.models import Diagnostico, FolhaDiagnosticada
 
-ORIGEM = "http://localhost:5173"  # o Vite do coffea-web
+ORIGEM = "http://localhost:5173"  # o Vite do coffea-web, liberado no CORS por padrão
+ORIGEM_NAO_PERMITIDA = "https://site-qualquer.example"
 
 # Três folhas, duas da mesma categoria, com os extras do modelo (o backend repassa como veio).
 SUCESSO = {

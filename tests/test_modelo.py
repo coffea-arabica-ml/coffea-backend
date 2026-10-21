@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apoio import ORIGEM, config_de_teste, enviar, imagem
-from app.config import RAIZ_REPO, Config, carregar_config
+from app.config import ORIGENS_CORS_PADRAO, RAIZ_REPO, Config, carregar_config
 from app.main import criar_app
 from app.modelo import (MANIFESTO, PASTA_CLASSIFICADOR_PADRAO, PESOS_DETECTOR_PADRAO, ErroDoModelo,
                         carregar, ler_manifesto, nome_do_detector, para_json, verificar_pesos)
@@ -98,6 +98,14 @@ def test_config_padrao():
     assert (config.pasta_classificador, config.pesos_detector) == (None, None)
     assert (config.verificar_pesos, config.concorrencia, config.carregar_modelo) == (True, 1, True)
     assert config.caminho_db == RAIZ_REPO / "coffea.db"
+    assert config.cors_origens == ORIGENS_CORS_PADRAO == ("http://localhost:5173",
+                                                          "http://127.0.0.1:5173")
+
+
+def test_origens_do_cors_separadas_por_virgula():
+    config = carregar_config({"COFFEA_CORS_ORIGENS":
+                              " https://Cafelens.vercel.app, http://localhost:5173 ,"})
+    assert config.cors_origens == ("https://cafelens.vercel.app", "http://localhost:5173")
 
 
 def test_caminho_relativo_vale_a_partir_da_raiz_e_nao_do_cwd(tmp_path, monkeypatch):
@@ -116,7 +124,12 @@ def test_caminho_relativo_vale_a_partir_da_raiz_e_nao_do_cwd(tmp_path, monkeypat
 @pytest.mark.parametrize("nome, valor", [("COFFEA_VERIFICAR_PESOS", "talvez"),
                                          ("COFFEA_CARREGAR_MODELO", "2"),
                                          ("COFFEA_CONCORRENCIA", "0"),
-                                         ("COFFEA_CONCORRENCIA", "dois")])
+                                         ("COFFEA_CONCORRENCIA", "dois"),
+                                         ("COFFEA_CORS_ORIGENS", "https://cafelens.vercel.app/"),
+                                         ("COFFEA_CORS_ORIGENS", "cafelens.vercel.app"),
+                                         ("COFFEA_CORS_ORIGENS", "https://cafelens.vercel.app/x"),
+                                         ("COFFEA_CORS_ORIGENS", ","),
+                                         ("COFFEA_CORS_ORIGENS", "*")])
 def test_valor_invalido_impede_a_subida(nome, valor):
     with pytest.raises(ValueError, match=nome):
         carregar_config({nome: valor})
@@ -294,7 +307,7 @@ def test_servidor_sobe_com_o_modelo_indisponivel(coffea_ml):
         assert str(coffea_ml.parent.name) not in raiz.text and "\\\\" not in raiz.text
         resposta = enviar(cliente, imagem())
         assert resposta.status_code == 503
-        assert resposta.headers.get("access-control-allow-origin") in ("*", ORIGEM)
+        assert resposta.headers.get("access-control-allow-origin") == ORIGEM
 
 
 def test_servidor_com_o_modelo_carregado_chama_o_inferencia(coffea_ml):
@@ -311,6 +324,36 @@ def test_raiz_mantem_o_esqueleto_e_acrescenta_o_modelo(cliente):
     assert (corpo["status"], corpo["mensagem"]) == ("ok", "coffea-backend no ar")
     assert set(corpo["modelo"]) == {"carregado", "classificador", "detector",
                                     "pesos_verificados", "motivo"}
+
+
+def test_cors_libera_so_as_origens_da_configuracao(tmp_path):
+    vercel = "https://cafelens.vercel.app"
+    config = config_de_teste(tmp_path, cors_origens=(vercel,), carregar_modelo=False)
+    with TestClient(criar_app(config)) as cliente:
+        liberada = cliente.get("/", headers={"Origin": vercel})
+        local = cliente.get("/", headers={"Origin": ORIGEM})
+    assert liberada.headers.get("access-control-allow-origin") == vercel
+    assert "access-control-allow-origin" not in local.headers
+
+
+def test_sem_config_o_cors_vem_do_ambiente(tmp_path, monkeypatch):
+    vercel = "https://cafelens.vercel.app"
+    monkeypatch.setenv("COFFEA_CORS_ORIGENS", vercel)
+    monkeypatch.setenv("COFFEA_DB", str(tmp_path / "historico.db"))
+    monkeypatch.setenv("COFFEA_CARREGAR_MODELO", "0")
+    app = criar_app()
+    assert app.state.config.cors_origens == (vercel,)
+    with TestClient(app) as cliente:
+        resposta = cliente.get("/", headers={"Origin": vercel})
+    assert resposta.headers.get("access-control-allow-origin") == vercel
+
+
+def test_docs_oferecem_o_codigo_fonte_e_a_licenca(cliente):
+    """AGPL-3.0 (ultralytics): quem usa o serviço pela rede acha o código pelo /docs."""
+    info = cliente.get("/openapi.json").json()["info"]
+    assert info["license"]["name"] == "AGPL-3.0"
+    for repositorio in ("coffea-backend", "coffea-ml", "coffea-web", "coffea-mobile"):
+        assert f"https://github.com/coffea-arabica-ml/{repositorio}" in info["description"]
 
 
 # ------------------------------------------------------------------------------- JSON

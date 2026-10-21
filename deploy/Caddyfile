@@ -1,0 +1,46 @@
+# Caddy na frente da API do Cafélens: HTTPS automático (Let's Encrypt) para {$DOMINIO}, limite do corpo,
+# timeouts e proxy para a api na rede interna do Docker. Roteiro em deploy/DEPLOY.md.
+{
+	servers {
+		# Sem HTTP/3: o compose publica só a 443/tcp.
+		protocols h1 h2
+		timeouts {
+			read_header 15s # slowloris
+			read_body 2m # 11 MiB a ~1 Mbit/s levam ~90 s
+			idle 2m
+		}
+	}
+}
+
+{$DOMINIO} {
+	# O backend recusa acima de 10 MiB com o 413 do contrato (e com CORS). A folga cobre o envelope do
+	# multipart; acima de 11 MiB, o 413 sai daqui, no contrato, mas sem CORS. Os frontends já barram
+	# fotos acima de 10 MB antes de enviar.
+	request_body {
+		max_size 11MiB
+	}
+
+	reverse_proxy api:8000 {
+		transport http {
+			dial_timeout 5s
+			# Uma inferência por vez: o pedido espera na fila. O site e o app desistem em 30 s.
+			response_header_timeout 90s
+			# Menor que o --timeout-keep-alive do uvicorn (75 s): um POST nunca vai por uma conexão
+			# que o uvicorn já fechou (daria 502).
+			keepalive 30s
+		}
+	}
+
+	# Erros do próprio Caddy (corpo grande, API fora ou reiniciando, timeout) no contrato dos frontends.
+	# As respostas da API passam como vieram.
+	handle_errors 413 {
+		header Content-Type "application/json; charset=utf-8"
+		respond `{"status": "erro", "tipo": "arquivo_muito_grande", "mensagem": "A imagem passa de 10 MB. Envie uma foto menor."}` 413
+	}
+	handle_errors {
+		header Content-Type "application/json; charset=utf-8"
+		respond `{"status": "erro", "tipo": "erro_desconhecido", "mensagem": "O diagnóstico está indisponível no momento. Tente de novo mais tarde."}` {err.status_code}
+	}
+
+	log
+}

@@ -1,0 +1,8 @@
+# O que roda no Linux sai sempre com LF, mesmo num checkout do Windows (core.autocrlf=true): um .sh
+# com CRLF quebra no bash.
+*.sh text eol=lf
+Caddyfile text eol=lf
+Dockerfile text eol=lf
+*.dockerignore text eol=lf
+*.yml text eol=lf
+.env.example text eol=lf

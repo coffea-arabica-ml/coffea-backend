@@ -4,8 +4,8 @@ import logging
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
-from apoio import (ORIGEM, SUCESSO, ModeloFalso, contar, enviar, erro_do_modelo, fora_do_loop,
-                   imagem)
+from apoio import (ORIGEM, ORIGEM_NAO_PERMITIDA, SUCESSO, ModeloFalso, contar, enviar,
+                   erro_do_modelo, fora_do_loop, imagem)
 from app.config import LIMITE_BYTES
 from app.db import crud
 from app.db.models import FolhaDiagnosticada
@@ -214,17 +214,34 @@ def test_cors_em_todas_as_respostas(cliente, modelo_falso, caso):
     requisicao, status = CASOS_DE_CORS[caso]
     resposta = requisicao(cliente, modelo_falso)
     assert resposta.status_code == status
-    assert resposta.headers.get("access-control-allow-origin") in ("*", ORIGEM)
+    assert resposta.headers.get("access-control-allow-origin") == ORIGEM
+    assert "Origin" in resposta.headers.get("vary", "")
     if status >= 400:
         corpo = resposta.json()
         assert corpo["status"] == "erro" and corpo["tipo"] and corpo["mensagem"]
+
+
+@pytest.mark.parametrize("caso", CASOS_DE_CORS)
+def test_origem_nao_permitida_nao_recebe_o_cabecalho(cliente_de_fora, modelo_falso, caso):
+    """A resposta sai igual, mas sem Access-Control-Allow-Origin: o navegador a bloqueia."""
+    requisicao, status = CASOS_DE_CORS[caso]
+    resposta = requisicao(cliente_de_fora, modelo_falso)
+    assert resposta.status_code == status
+    assert "access-control-allow-origin" not in resposta.headers
 
 
 def test_preflight_do_navegador(cliente):
     resposta = cliente.options("/diagnostico", headers={
         "Origin": ORIGEM, "Access-Control-Request-Method": "POST"})
     assert resposta.status_code == 200
-    assert resposta.headers.get("access-control-allow-origin") in ("*", ORIGEM)
+    assert resposta.headers.get("access-control-allow-origin") == ORIGEM
+
+
+def test_preflight_de_origem_nao_permitida(cliente_de_fora):
+    resposta = cliente_de_fora.options("/diagnostico", headers={
+        "Origin": ORIGEM_NAO_PERMITIDA, "Access-Control-Request-Method": "POST"})
+    assert resposta.status_code == 400
+    assert "access-control-allow-origin" not in resposta.headers
 
 
 def test_modelo_falso_tem_a_interface_do_modelo():

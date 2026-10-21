@@ -54,6 +54,10 @@ pela rede local.
   `VITE_API_URL=http://localhost:8000`. No coffea-mobile, `EXPO_PUBLIC_API_MODE=http` e
   `EXPO_PUBLIC_API_URL=http://<IP do PC>:8000`. O IP do PC é o "Endereço IPv4" do adaptador
   da rede local (Wi-Fi ou cabo) no `ipconfig`, não o de VirtualBox, WSL ou VPN.
+- **CORS:** por padrão, o navegador só é liberado para o Vite local (`http://localhost:5173` e
+  `http://127.0.0.1:5173`). Outra origem: `COFFEA_CORS_ORIGENS` (ver "Variáveis de ambiente").
+- **Produção:** `https://api.coffealab.tech`, em Docker atrás do Caddy. Roteiro em
+  [deploy/DEPLOY.md](deploy/DEPLOY.md).
 
 ### Celular na mesma rede: firewall do Windows
 Orientação para quem vai apresentar. Os comandos mudam a configuração do Windows: rode-os você
@@ -115,6 +119,7 @@ a partir da raiz deste repositório. Valor inválido impede a subida, com o nome
 | `COFFEA_CONCORRENCIA` | `1` | inferências ao mesmo tempo (semáforo). Não aumente sem testar: o YOLO do ultralytics não é thread-safe |
 | `COFFEA_CARREGAR_MODELO` | `1` | `0` sobe sem modelo, e o `POST /diagnostico` responde 503 |
 | `COFFEA_DB` | `coffea.db` | banco do histórico |
+| `COFFEA_CORS_ORIGENS` | `http://localhost:5173,http://127.0.0.1:5173` | origens do navegador liberadas no CORS, separadas por vírgula, como no cabeçalho `Origin`: `https://site.vercel.app`, sem barra no fim. Barra, caminho ou `*` impedem a subida |
 
 ## Rotas
 - `GET /` — healthcheck, com o estado do modelo
@@ -174,12 +179,16 @@ detalhes internos. Os erros do modelo podem trazer também `detalhes`.
 | 404 | `erro_desconhecido` | diagnóstico ou rota inexistente |
 | 503 | `erro_desconhecido` | modelo indisponível (o motivo está no `GET /`) |
 | 500 | `erro_desconhecido` | erro inesperado; o stack trace fica só no log |
+| 413 | `arquivo_muito_grande` | só em produção, do Caddy: corpo acima de 11 MiB, sem CORS |
+| 502, 504 | `erro_desconhecido` | só em produção, do Caddy: API fora do ar, reiniciando ou sem resposta em 90 s, sem CORS |
 
 - **200 com erro:** não é falha do servidor. A requisição funcionou, a foto é que não serve.
 - **Frontends:** tratam 413 e 415 pelo código HTTP. Nas outras respostas não-OK, repassam o
   `tipo` do corpo.
-- **CORS:** todas as respostas, inclusive 4xx e 5xx, saem com `Access-Control-Allow-Origin`. As
-  rotas capturam os próprios erros inesperados porque, no Starlette, o handler global de
+- **CORS:** para as origens de `COFFEA_CORS_ORIGENS`, todas as respostas, inclusive 4xx e 5xx,
+  saem com `Access-Control-Allow-Origin` (e `Vary: Origin`). Outra origem recebe a mesma resposta,
+  sem o cabeçalho, e o navegador a bloqueia; o app nativo não manda `Origin` e não depende de CORS.
+  As rotas capturam os próprios erros inesperados porque, no Starlette, o handler global de
   `Exception` roda fora do `CORSMiddleware`. Por ele, o 500 sairia sem o cabeçalho, e o
   navegador mostraria "falha de rede". O handler global fica só como último recurso.
 - **Log:** nem a imagem nem o nome do arquivo vão para o log.
@@ -286,8 +295,11 @@ cerca de 9 s.
 - **`pip check`:** acusa que o ultralytics pede `opencv-python`, `matplotlib`, `psutil` e
   `requests`. É esperado: o headless atende o ultralytics, e os outros três não são importados
   pela cadeia de inferência (conferido num venv limpo em 16/10/2026).
-- **Linux:** o torch do PyPI vem com CUDA, um download grande. O ambiente de produção fica para a
-  Frente 10.
+- **Linux (produção):** o torch do PyPI vem com CUDA, um download grande. A imagem Docker
+  (`deploy/Dockerfile`) instala antes o torch e o torchvision do índice CPU do PyTorch, nas versões
+  lidas deste `requirements.txt`, que não muda; o build falha se entrar CUDA ou o `opencv-python`.
+  As dependências transitivas, sem versão fixa, se resolvem no build: o `pip freeze` de cada
+  imagem fica em `/app/pip-freeze.txt`.
 
 ## Limitações conhecidas
 - **Objeto que não é planta pode voltar como sucesso.** A `teste-sem-planta.jpg` (fixture do
@@ -301,15 +313,38 @@ cerca de 9 s.
 - **Contagem de folhas saudáveis:** pode variar ±1 conforme a redução da foto. Uma folha saudável
   colada no corte do modelo aparece ou some (visto em 2 de 6 fotos, comparando a original com a
   reduzida a 2048 px).
+- **Fila sem teto:** uma inferência por vez, e os pedidos esperam sem limite. Os frontends desistem
+  em 30 s; com muitos envios juntos, parte deles vê "o servidor demorou demais", e o servidor
+  processa o pedido abandonado mesmo assim.
+- **Erros do proxy sem CORS (produção):** o 413 acima de 11 MiB e o 502/504 do Caddy saem no
+  contrato, mas sem `Access-Control-Allow-Origin`; no navegador, viram falha de conexão. Os
+  frontends já barram fotos acima de 10 MB antes de enviar.
 
-## Pendências da Frente 10
-- **Pesos em produção:** hoje eles vêm do clone local do coffea-ml.
-- **CORS restrito:** hoje é `allow_origins=["*"]` (TODO em `app/main.py`).
-- **Licença (a conferir):** o ultralytics e os pesos YOLO são AGPL-3.0, licença aceita pelo
-  gestor em 10/10/2026. A AGPL tem obrigações para software oferecido como serviço em rede, e o
-  repositório é público. Falta conferir o que isso exige do deploy.
-- **Limite do upload no servidor:** o Starlette recebe o upload inteiro antes da rota, que só lê
-  até 10 MB + 1 byte. O limite na recepção (proxy ou servidor) fica para o deploy.
+## Produção (Frente 10)
+Roteiro completo, da preparação do servidor ao backup, em [deploy/DEPLOY.md](deploy/DEPLOY.md).
+
+- **Onde:** VPS (1 vCPU, 4 GB), Docker com dois serviços: a API (esta imagem, com o código de
+  inferência do coffea-ml) e o Caddy na frente, com HTTPS automático. Só o Caddy publica portas.
+- **Pesos:** copiados para o clone do coffea-ml no servidor e montados só-leitura nos caminhos
+  padrão; a conferência de tamanho e SHA-256 contra o `MANIFESTO.md` vale como aqui.
+- **Limite do upload:** o Starlette recebe o upload inteiro antes da rota, que só lê até 10 MB + 1
+  byte. Na produção, o Caddy corta o corpo acima de 11 MiB; até lá, o 413 é o do backend, com CORS.
+- **Pendente:** a medição do RNF02 e o teste de carga no servidor (DEPLOY.md, seções 3 e 4).
+
+## Licença e código-fonte
+O coffea-backend é distribuído sob a [AGPL-3.0](LICENSE). O detector do coffea-ml usa o
+ultralytics e pesos YOLO, ambos AGPL-3.0 (licença aceita pelo gestor em 10/10/2026), e o serviço
+roda os dois juntos. Pela AGPL, quem usa o serviço pela rede tem de poder obter o código-fonte
+correspondente, de graça.
+
+- **Onde está o código:** nos repositórios públicos de https://github.com/coffea-arabica-ml
+  (coffea-backend e coffea-ml formam o serviço; coffea-web e coffea-mobile são os clientes).
+- **Como o serviço oferece o código:** a descrição do `/docs` (OpenAPI) traz a licença e os links.
+  A imagem de produção leva os dois commits em rótulos (`cafelens.commit.backend` e
+  `cafelens.commit.ml`).
+- **Pendente (decisões do gestor):** o `LICENSE` no coffea-ml; um link "Código-fonte" no site e no
+  app, que é por onde a maioria das pessoas usa o serviço; e se o `last.pt` do detector, derivado
+  do `yolo11s-seg.pt` (AGPL-3.0), é publicado junto com o código.
 
 ## Contribuindo
 Trabalhamos direto na `main`, sem branch nem PR (decisão do gestor, 15/10/2026; vale para
