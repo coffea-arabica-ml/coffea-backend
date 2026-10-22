@@ -283,6 +283,26 @@ A subida da tabela vai do início do processo `python -m uvicorn app.main:app`, 
 até o `GET /` mostrar `carregado=true`. Do comando `fastapi run`, com a ativação do venv, são
 cerca de 9 s.
 
+Medição de 21/10/2026, no servidor de produção (VPS Hostinger KVM 1: 1 vCPU AMD EPYC 9355P, 4 GB
+de RAM, Ubuntu 24.04), num contêiner avulso com 1 vCPU, nas mesmas 30 primeiras fotos do BRACOT de
+treino, uma rodada (comando em [deploy/DEPLOY.md](deploy/DEPLOY.md), seção 3).
+
+| medida | segundos |
+|---|---:|
+| subida do servidor (até `carregado=true`) | 3,66 |
+| 1ª chamada | 2,42 |
+| mediana das outras 29 | 1,15 |
+| p95 das outras 29 | 1,78 |
+| máximo das outras 29 | 2,12 |
+
+Nenhuma das 30 chamadas passou de 5 s.
+
+**Teste de carga (21/10/2026).** 1.000 chamadas em sequência, pelo Caddy, com as fotos de treino
+em ciclo (`deploy/carga.sh`), em 19 min 42 s. Todas com HTTP 200. Tempo: mediana 1,19 s, p95
+1,79 s, máximo 2,49 s, nenhuma acima de 5 s. Memória da API estável em 844 MiB (+0,1% entre as
+chamadas 50 a 150 e as últimas 100), swap 0, pico (`memory.peak`) de 1.083 MiB contra o limite de
+2.560 MiB, 0 mortes por falta de memória e 0 reinícios.
+
 ## Dependências
 - **Lista à mão:** o `requirements.txt` é uma lista fixa, mantida à mão, e **não** sai de `pip
   freeze`. O ultralytics precisa de `pip install --no-deps`, e um freeze o listaria como
@@ -315,7 +335,9 @@ cerca de 9 s.
   reduzida a 2048 px).
 - **Fila sem teto:** uma inferência por vez, e os pedidos esperam sem limite. Os frontends desistem
   em 30 s; com muitos envios juntos, parte deles vê "o servidor demorou demais", e o servidor
-  processa o pedido abandonado mesmo assim.
+  processa o pedido abandonado mesmo assim. Decisão do gestor, 22/10/2026: na apresentação, o uso
+  é organizado em grupos pequenos e o backend não muda; a correção (ignorar o pedido de quem já
+  desconectou e recusar com 503 acima de um teto de fila) fica como opção da Frente 11.
 - **Erros do proxy sem CORS (produção):** o 413 acima de 11 MiB e o 502/504 do Caddy saem no
   contrato, mas sem `Access-Control-Allow-Origin`; no navegador, viram falha de conexão. Os
   frontends já barram fotos acima de 10 MB antes de enviar.
@@ -329,7 +351,7 @@ Roteiro completo, da preparação do servidor ao backup, em [deploy/DEPLOY.md](d
   padrão; a conferência de tamanho e SHA-256 contra o `MANIFESTO.md` vale como aqui.
 - **Limite do upload:** o Starlette recebe o upload inteiro antes da rota, que só lê até 10 MB + 1
   byte. Na produção, o Caddy corta o corpo acima de 11 MiB; até lá, o 413 é o do backend, com CORS.
-- **Pendente:** a medição do RNF02 e o teste de carga no servidor (DEPLOY.md, seções 3 e 4).
+- **Medido em 21/10/2026:** RNF02 e teste de carga no servidor (seção "Medição do RNF02").
 
 ## Licença e código-fonte
 O coffea-backend é distribuído sob a [AGPL-3.0](LICENSE). O detector do coffea-ml usa o
@@ -342,9 +364,11 @@ correspondente, de graça.
 - **Como o serviço oferece o código:** a descrição do `/docs` (OpenAPI) traz a licença e os links.
   A imagem de produção leva os dois commits em rótulos (`cafelens.commit.backend` e
   `cafelens.commit.ml`).
-- **Pendente (decisões do gestor):** o `LICENSE` no coffea-ml; um link "Código-fonte" no site e no
-  app, que é por onde a maioria das pessoas usa o serviço; e se o `last.pt` do detector, derivado
-  do `yolo11s-seg.pt` (AGPL-3.0), é publicado junto com o código.
+- **Feito (decisões do gestor, 21/10/2026):** o `LICENSE` no coffea-ml (4596e4f); o link
+  "Código-fonte" e os créditos dos conjuntos de dados no site (6a3a938) e no app (e4c75a1); e a
+  publicação dos dois pesos na Release `pesos-v1` do coffea-ml
+  (https://github.com/coffea-arabica-ml/coffea-ml/releases/tag/pesos-v1), com tamanho e SHA-256 de
+  cada um.
 
 ## Contribuindo
 Trabalhamos direto na `main`, sem branch nem PR (decisão do gestor, 15/10/2026; vale para
