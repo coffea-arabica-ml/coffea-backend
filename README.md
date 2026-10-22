@@ -303,6 +303,47 @@ em ciclo (`deploy/carga.sh`), em 19 min 42 s. Todas com HTTP 200. Tempo: mediana
 chamadas 50 a 150 e as últimas 100), swap 0, pico (`memory.peak`) de 1.083 MiB contra o limite de
 2.560 MiB, 0 mortes por falta de memória e 0 reinícios.
 
+## Medição do RNF03 (≤ 2 s por folha, sem GPU)
+O `scripts/medir_folha.py` mede a cadeia etapa por etapa, sem o servidor. Ele carrega o modelo como
+o backend, na configuração padrão. Em cada foto, mede a decodificação, o detector, o recorte, o
+classificador com todas as folhas num lote e com uma folha só (lote de 1), e a cadeia inteira (a
+chamada do `POST /diagnostico`). Só mede tempo e contagem de folhas. Ele tem as travas do
+`medir_tempo.py` contra os conjuntos de teste fechados.
+
+```powershell
+python scripts/medir_folha.py --pasta ../coffea-ml/data/raw/bracot/bracot-data/train --amostra 30
+```
+
+Medição de 22/10/2026, nas mesmas 30 primeiras fotos do BRACOT de treino (2 a 11 folhas por foto,
+mediana 6; nenhuma com 1 folha): no PC, a 2ª de duas rodadas (a 1ª deu valores próximos: mediana
+da cadeia 0,854 s contra 0,887 s); no servidor, uma rodada. PC: Windows 11, 16 CPUs lógicas, 8
+threads do torch. Servidor: contêiner avulso da imagem de produção, 1 vCPU, 1 thread, com a API no
+ar e sem chamadas durante a medição. As threads diferem: os tempos das duas máquinas não são
+comparáveis. Segundos; mediana, p95 e máximo das outras 29 fotos.
+
+| PC | 1ª foto | mediana | p95 | máximo |
+|---|---:|---:|---:|---:|
+| classificador em lote ÷ folhas | 0,088 | 0,074 | 0,081 | 0,086 |
+| classificador, lote de 1 folha | 0,088 | 0,071 | 0,086 | 0,088 |
+| detector, por foto | 0,315 | 0,194 | 0,237 | 0,245 |
+| cadeia inteira ÷ folhas | 0,132 | 0,154 | 0,284 | 0,287 |
+
+| servidor | 1ª foto | mediana | p95 | máximo |
+|---|---:|---:|---:|---:|
+| classificador em lote ÷ folhas | 0,201 | 0,145 | 0,194 | 0,214 |
+| classificador, lote de 1 folha | 0,145 | 0,129 | 0,160 | 0,268 |
+| detector, por foto | 0,348 | 0,229 | 0,347 | 0,370 |
+| cadeia inteira ÷ folhas | 0,203 | 0,230 | 0,355 | 0,411 |
+
+No servidor, o healthcheck da imagem rodava dentro do contêiner de medição. A mediana da cadeia
+inteira (1,325 s) ficou acima da do RNF02 (1,15 s, por HTTP), possivelmente por isso (não
+confirmado).
+
+Nenhuma leitura passou de 2 s por folha nas 30 fotos, nas duas máquinas: o RNF03 foi atendido.
+Sem foto de 1 folha na amostra, a cadeia inteira das fotos de 2 folhas (até 0,575 s no PC e 0,823 s
+no servidor) é o limite superior desse caso no caminho por detecção. A foto em que uma folha ocupa
+o quadro (recorte da foto inteira) não foi medida.
+
 ## Dependências
 - **Lista à mão:** o `requirements.txt` é uma lista fixa, mantida à mão, e **não** sai de `pip
   freeze`. O ultralytics precisa de `pip install --no-deps`, e um freeze o listaria como
