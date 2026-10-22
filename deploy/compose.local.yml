@@ -1,12 +1,14 @@
 # Só para a validação no Docker Desktop (Windows), por cima do docker-compose.yml:
 #   docker compose -f docker-compose.yml -f compose.local.yml <comando>
 # Portas só no 127.0.0.1 (o Caddy atende "localhost" com um certificado da CA interna dele) e a API
-# presa a 1 CPU, como o VPS. Roteiro em DEPLOY.md, "Validação local".
+# restrita ao núcleo 0 (cpuset), o que não equivale a 1 vCPU: ver DEPLOY.md, "Validação local",
+# que também traz o roteiro.
 services:
   api:
     cpuset: "0"
     environment:
-      # No VPS (1 vCPU), o coffea-ml já calcula 1 thread; aqui a máquina tem mais CPUs.
+      # Não limita as threads do torch: o ultralytics as fixa em min(8, max(1, os.cpu_count() - 1)),
+      # e o os.cpu_count() ignora o cpuset. No VPS (1 vCPU), isso dá 1 thread.
       OMP_NUM_THREADS: "1"
   caddy:
     ports: !override

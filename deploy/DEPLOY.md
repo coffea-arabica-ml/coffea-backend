@@ -535,7 +535,11 @@ backups datados com mais de 14 dias (os `coffea-testes-*` ficam).
 ## Validação local (Docker Desktop, no PC)
 
 Antes de ir ao servidor, a mesma imagem roda no Docker Desktop (WSL2). O `compose.local.yml` publica
-o Caddy só em `127.0.0.1:18080/18443` e prende a API a 1 CPU, como o VPS.
+o Caddy só em `127.0.0.1:18080/18443` e restringe a API ao núcleo 0 (`cpuset`), o que não reproduz o
+VPS de 1 vCPU. O ultralytics fixa as threads do torch em `min(8, max(1, os.cpu_count() - 1))`, e o
+`os.cpu_count()` do contêiner ignora o `cpuset`: no PC (16 CPUs lógicas) são 8 threads disputando um
+núcleo, e no VPS, 1. Os tempos medidos aqui servem para comparar o comportamento e não valem como
+RNF02: o valor de referência é o do servidor (seção 3).
 
 1. Copie o `deploy\.env.example` para `deploy\.env` (fora do git) e mude: `DOMINIO=localhost`,
    `COFFEA_CORS_ORIGENS=http://localhost:5173`, e os commits de `git -C .. rev-parse --short HEAD` e
@@ -550,9 +554,10 @@ docker compose -f docker-compose.yml -f compose.local.yml up -d --wait
 curl.exe -sk https://localhost:18443/
 ```
 
-- **RNF02 com 1 CPU:** pare a API (`... stop api`) e rode o `medir_tempo.py` num contêiner avulso,
+- **RNF02 medido no PC (não equivale a 1 vCPU):** pare a API (`... stop api`) e rode o `medir_tempo.py` num contêiner avulso,
   com a pasta de treino do BRACOT montada:
   `docker compose -f docker-compose.yml -f compose.local.yml run --rm --no-deps -v "$((Resolve-Path ..\..\coffea-ml\data\raw\bracot\bracot-data\train).Path):/fotos:ro" api python scripts/medir_tempo.py --pasta /fotos --amostra 30`.
+  A medida oficial é a do servidor (seção 3).
 - **Carga curta (Git Bash):** `INSEGURO=1 bash carga.sh "C:/Users/<você>/Documents/coffea-arabica-ml/coffea-ml/data/raw/bracot/bracot-data/train" 100 https://localhost:18443`
   (a memória vem do `docker stats`; o Docker Desktop não expõe o cgroup).
 - **No fim:** `docker compose -f docker-compose.yml -f compose.local.yml down` (a imagem fica; nunca `-v`
