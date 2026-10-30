@@ -363,12 +363,17 @@ o quadro (recorte da foto inteira) não foi medida.
   imagem fica em `/app/pip-freeze.txt`.
 
 ## Limitações conhecidas
-- **Objeto que não é planta pode voltar como sucesso.** A `teste-sem-planta.jpg` (fixture do
-  coffea-web) voltou com 3 folhas saudáveis, com `scoreDeteccao` de 0,80 a 0,87. Nas 35 folhas
-  reais medidas (as 6 primeiras fotos, em ordem alfabética, do BRACOT de treino, em 16/10/2026),
-  o mínimo foi 0,59 e a mediana, 0,90. Nesta amostra (1 imagem sem planta e 35 folhas reais,
-  fotos originais), nenhum limiar de detecção separa os dois sem perder folhas reais. O modelo
-  está congelado, e nenhum limiar foi alterado.
+- **Objeto que não é planta pode voltar como sucesso.**
+  - **O problema:** a `teste-sem-planta.jpg` (fixture do coffea-web) voltou com 3 folhas
+    saudáveis, com `scoreDeteccao` de 0,80 a 0,87. Nas 35 folhas reais medidas (as 6 primeiras
+    fotos, em ordem alfabética, do BRACOT de treino, em 16/10/2026), o mínimo foi 0,59 e a
+    mediana, 0,90. Nenhum limiar de detecção separa os dois sem perder folhas reais.
+  - **O que mudou:** desde 30/10/2026 (decisão do gestor), o coffea-ml tem um filtro de matiz
+    (passo 8 do README de lá), sem troca de pesos. Em 38 fotos sem planta, o diagnóstico com
+    sucesso caiu de 23 para 9: madeira, pele, papelão e objetos vermelhos ou laranja deixam de
+    virar folha.
+  - **O que continua:** objeto verde, amarelo ou azul ainda pode passar. A própria
+    `teste-sem-planta.jpg` ainda volta com folhas, pelo notebook azul-marinho.
 - **JPEG corrompido com cabeçalho válido** devolve 500, e não 200 com `formato_invalido`.
 - **Pedido cancelado pelo cliente** continua processando e entra no histórico.
 - **Contagem de folhas saudáveis:** pode variar ±1 conforme a redução da foto. Uma folha saudável
