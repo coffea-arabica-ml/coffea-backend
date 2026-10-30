@@ -14,7 +14,8 @@ SQLite (`coffea.db`). Detalhes no README.
 - Nunca usar os conjuntos de teste fechados do coffea-ml (BRACOL de teste, `test/` do BRACOT,
   recortes de campo de teste), nem em testes, nem em medições.
 - O modelo está congelado: não mudar parâmetros nem limiares, e não mexer no coffea-ml, no
-  coffea-web nem no coffea-mobile a partir daqui.
+  coffea-web nem no coffea-mobile a partir daqui. Exceção (decisão do gestor, 30/10/2026): o
+  filtro de cor de folha do coffea-ml (passo 8 do CLAUDE.md de lá), sem troca de pesos.
 - `requirements.txt` é mantido à mão (nunca `pip freeze`), e o ultralytics vai à parte com
   `--no-deps`. Nunca o `opencv-python`, só o headless.
 - Schema do histórico mudou: README no mesmo commit. Nunca versionar pesos, banco nem `.env`.
